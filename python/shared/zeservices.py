@@ -12,88 +12,106 @@ import base64
 # We check the token expiry time.
 import time
 
+
 class ZEServices:
 
- # API Gateway.
- servicesHost = 'https://www.services.renault-ze.com'
+    # API Gateway.
+    servicesHost = 'https://www.services.renault-ze.com'
 
- # This prevents the requests module from creating its own user-agent.
- stealthyHeaders = {'User-Agent': None, 'DNT':'1'}
+    # This prevents the requests module from creating its own user-agent.
+    stealthyHeaders = {'User-Agent': None, 'DNT': '1'}
 
- def __init__(self, user, password):
-  # Generate the ZE Services token.
-  self.accessToken = self.getAccessToken(user, password)
+    def __init__(self, user, password):
+        # Generate the ZE Services token.
+        self.accessToken = self.getAccessToken(user, password)
 
- def getAccessToken(self, user, password):
-  try:
-   # File contains refresh_token followed by the JWT token.
-   with open('credentials_token.json', 'r') as tokenStorage:
-    tokenData = json.load(tokenStorage)
+    def getAccessToken(self, user, password):
+        try:
+            print("Trying to reuse token...")
 
-   # We could be using python_jwt but even the official ZE Services ("decodeToken") does it this crude way, so why overcomplicate things?
-   splitToken = tokenData['token'].split('.')
+            # File contains refresh_token followed by the JWT token.
+            with open('credentials_token.json', 'r') as tokenStorage:
+                tokenData = json.load(tokenStorage)
 
-   # Check it looks semi-valid.
-   if len(splitToken) != 3: raise ValueError('Not a well formed JWT token')
+            # We could be using python_jwt but even the official ZE Services ("decodeToken")
+            # does it this crude way, so why overcomplicate things?
+            splitToken = tokenData['token'].split('.')
 
-   # Get the JSON payload of the JWT token.
-   b64payload = splitToken[1]
-   
-   # Check the base64 padding.
-   missing_padding = len(b64payload) % 4
-   if missing_padding:
-      b64payload += '='* (4 - missing_padding)
+            # Check it looks semi-valid.
+            if len(splitToken) != 3:
+                raise ValueError('Not a well formed JWT token')
 
-   # Decode the base64 JWT token.
-   jsonPayload = base64.b64decode(b64payload)
+            # Get the JSON payload of the JWT token.
+            b64payload = splitToken[1]
 
-   # Parse it as JSON.
-   token = json.loads(jsonPayload)
+            # Check the base64 padding.
+            missing_padding = len(b64payload) % 4
+            if missing_padding:
+                b64payload += '=' * (4 - missing_padding)
 
-   # Is the token still valid? If not, refresh it.
-   if(time.gmtime() > time.gmtime(token['exp'])):
-    url = ZEServices.servicesHost + '/api/user/token/refresh'
+            # Decode the base64 JWT token.
+            jsonPayload = base64.b64decode(b64payload)
 
-    # refreshToken is now sent using cookies,
-    # and xsrfToken is sent using headers
-    # so only the token is required in the payload
-    payload = {'token': tokenData['token']}
+            # Parse it as JSON.
+            token = json.loads(jsonPayload)
 
-    headers = ZEServices.stealthyHeaders
-    headers['X-XSRF-TOKEN'] = tokenData['xsrfToken']
-    cookies = {'refreshToken': tokenData['refreshToken']}
+            print("Now: {}".format(time.gmtime()))
+            print("Exp: {}".format(time.gmtime(token['exp'])))
 
-    ses = requests.Session()
-    response = ses.post(url, headers=headers, cookies=cookies, json=payload).json()
+            # Is the token still valid? If not, refresh it.
+            if(time.gmtime() > time.gmtime(token['exp'])):
+                print("Token expired, trying refresh...")
 
-    # Overwrite the current token with this newly returned one.
-    tokenData['token'] = response['token']
+                url = ZEServices.servicesHost + '/api/user/token/refresh'
 
-    # Save this refresh token and new JWT token so we are nicer to Renault's authentication server.
-    with open('credentials_token.json', 'w') as outfile:
-     json.dump(tokenData, outfile)
+                # refreshToken is now sent using cookies,
+                # and xsrfToken is sent using headers
+                # so only the token is required in the payload
+                payload = {'token': tokenData['token']}
 
-   # Return the token (as-is if valid, refreshed if not).
-   return tokenData['token']
+                headers = ZEServices.stealthyHeaders
+                headers['X-XSRF-TOKEN'] = tokenData['xsrfToken']
+                cookies = {'refreshToken': tokenData['refreshToken']}
 
-  # We have never cached an access token before.
-  except (FileNotFoundError, json.decoder.JSONDecodeError):
-   url = ZEServices.servicesHost + '/api/user/login'
-   payload = {'username':user, 'password':password}
-   ses = requests.Session()
-   api_json = ses.post(url, headers=ZEServices.stealthyHeaders, json=payload).json()
+                ses = requests.Session()
+                response = ses.post(url, headers=headers, cookies=cookies, json=payload).json()
+                print("Refresh Response:")
+                print(response)
 
-   # We do not want to save all the user data returned on login, so we create a smaller file of just the mandatory information.
-   tokenData = {'refreshToken' : ses.cookies['refreshToken'], 'xsrfToken' : api_json['xsrfToken'], 'token' : api_json['token']}
+                # Overwrite the current token with this newly returned one.
+                tokenData['token'] = response['token']
+                tokenData['refreshToken'] = ses.cookies['refreshToken']
 
-   # Save this refresh token and JWT token for future use so we are nicer to Renault's authentication server.
-   with open('credentials_token.json', 'w') as outfile:
-    json.dump(tokenData, outfile)
+                # Save this refresh token and new JWT token so we are nicer to Renault's authentication server.
+                with open('credentials_token.json', 'w') as outfile:
+                    json.dump(tokenData, outfile)
 
-   # The script will just want the token.
-   return api_json['token']
+            # Return the token (as-is if valid, refreshed if not).
+            return tokenData['token']
 
- def apiCall(self, path):
-  url = ZEServices.servicesHost + path
-  headers = {'Authorization': 'Bearer ' + self.accessToken, 'User-Agent': None}
-  return requests.get(url, headers=headers).json()
+        # We have never cached an access token before.
+        except (OSError, IOError, json.decoder.JSONDecodeError):
+            print("Doing a login...")
+
+            url = ZEServices.servicesHost + '/api/user/login'
+            payload = {'username': user, 'password': password}
+            ses = requests.Session()
+            api_json = ses.post(url, headers=ZEServices.stealthyHeaders, json=payload).json()
+
+            # We do not want to save all the user data returned on login, so we create a smaller
+            # file of just the mandatory information.
+            tokenData = {'refreshToken': ses.cookies['refreshToken'],
+                         'xsrfToken': api_json['xsrfToken'],
+                         'token': api_json['token']}
+
+            # Save this refresh token and JWT token for future use so we are nicer to Renault's authentication server.
+            with open('credentials_token.json', 'w') as outfile:
+                json.dump(tokenData, outfile)
+
+            # The script will just want the token.
+            return api_json['token']
+
+    def apiCall(self, path):
+        url = ZEServices.servicesHost + path
+        headers = {'Authorization': 'Bearer ' + self.accessToken, 'User-Agent': None}
+        return requests.get(url, headers=headers).json()
