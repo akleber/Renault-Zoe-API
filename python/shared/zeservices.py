@@ -50,7 +50,7 @@ class ZEServices:
                 b64payload += '=' * (4 - missing_padding)
 
             # Decode the base64 JWT token.
-            jsonPayload = base64.b64decode(b64payload)
+            jsonPayload = base64.b64decode(b64payload).decode('utf8')
 
             # Parse it as JSON.
             token = json.loads(jsonPayload)
