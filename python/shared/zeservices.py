@@ -55,8 +55,8 @@ class ZEServices:
             # Parse it as JSON.
             token = json.loads(jsonPayload)
 
-            print("Now: {}".format(time.gmtime()))
-            print("Exp: {}".format(time.gmtime(token['exp'])))
+            # print("Now: {}".format(time.gmtime()))
+            # print("Exp: {}".format(time.gmtime(token['exp'])))
 
             # Is the token still valid? If not, refresh it.
             if(time.gmtime() > time.gmtime(token['exp'])):
@@ -75,8 +75,6 @@ class ZEServices:
 
                 ses = requests.Session()
                 response = ses.post(url, headers=headers, cookies=cookies, json=payload).json()
-                print("Refresh Response:")
-                print(response)
 
                 # Overwrite the current token with this newly returned one.
                 tokenData['token'] = response['token']
